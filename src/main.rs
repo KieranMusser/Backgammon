@@ -182,7 +182,7 @@ fn take_roll(roll: &mut [i32], double_count: &mut i32, sel: i32) -> bool {
 	return roll[0] == -1 && roll[1] == -1;
 }
 
-fn can_move(roll: &[i32], double_count: i32, sel: i32) -> bool {
+fn can_move(roll: &[i32], sel: i32) -> bool {
 	return sel == roll[0] || sel == roll[1];
 }
 
@@ -204,15 +204,31 @@ fn run_turn(roll: &mut [i32], double_count: &mut i32, turn_black: &mut bool, f_s
 	}
 }
 
-
+/* handle_right_click
+ * board: array of Cells
+ * roll: array of the 2 dice rolls
+ * double_count: if rolled doubles, counts number of double rolls left
+ * turn_black: whether the current turn is black
+ * sel: non-relative board position selected
+ */
 fn handle_right_click(board: &mut [Cell], roll: &mut [i32], double_count: &mut i32, turn_black: &mut bool, bar: &[Cell], sel: i32) {
+
+
+	/* Can't take pieces off if you have pieces on the bar */
+	if !*turn_black && bar[0].pieces > 0 {
+		return;
+	}
+	if *turn_black && bar[1].pieces > 0 {
+		return;
+	}
+
 	for n in 0..23 {
 		if ((*turn_black && n < 18) || (!*turn_black && n > 5) ) && board[n].pieces > 0 && board[n].black == *turn_black{
 			return;
 		}
 	}
 	let roll_amt = if !*turn_black { sel + 1} else { 24 - sel };
-	let real_sel= (if *turn_black { sel } else { 23 - sel }) as usize;
+	let real_sel = (if *turn_black { sel } else { sel }) as usize;
 	let mut max = 6;
 	if *turn_black {
 		for n in 17..=23 {
@@ -223,16 +239,17 @@ fn handle_right_click(board: &mut [Cell], roll: &mut [i32], double_count: &mut i
 		}
 	} else {
 		for n in (0..6).rev() {
-			if board[n].black && board[n].pieces > 0 {
+			if !board[n].black && board[n].pieces > 0 {
 				max = 1+ n as i32;
 				break;
 			}
 		}
 	}
+
 	if board[real_sel].pieces == 0 || board[real_sel].black != *turn_black  {
 		return;
 	}
-	let mut target : i32;
+	let target : i32;
 	if roll[0] >= max && max == roll_amt {
 		target = roll[0];
 	} else if roll[1] >= max && max == roll_amt {
@@ -259,7 +276,7 @@ fn main() {
 	let mut rl: RaylibHandle;
 	let thread: RaylibThread;
 	let mut board: [Cell; 24] = [
-		Cell {black: false, pieces: 0 }; 24
+		Cell {black: true, pieces: 0 }; 24
 	];
 	let mut cur_sel: i32 = -1;
 
@@ -274,6 +291,7 @@ fn main() {
 	let mut double_count = 0;
 
 	reroll(&mut roll, &mut double_count);
+
 	board[0] = Cell { black: true, pieces: 2 };
 	board[5] = Cell { black: false, pieces: 5 };
 	
@@ -286,8 +304,13 @@ fn main() {
 	board[16] = Cell { black: true, pieces: 3 };
 	board[12] = Cell { black: false, pieces: 5 };
 
+
+//	board[23] = Cell { black: true, pieces: 4 } ;
+//	board[0] = Cell { black: false, pieces: 2 } ;
+
 	unsafe {
 		SetConfigFlags(FLAG_VSYNC_HINT as u32);
+		ffi::SetTraceLogLevel(ffi::TraceLogLevel::LOG_ERROR as i32);
 	}
 
 	(rl, thread) = raylib::init()
@@ -305,12 +328,12 @@ fn main() {
 			if cur_sel != -1 && cur_sel != sel {
 				if cur_sel == 0xBA4 {
 					let f_sel = if turn_black { sel + 1 } else { 24 - sel };
-					if can_move(&roll, double_count, f_sel)  {
+					if can_move(&roll, f_sel)  {
 						if move_off_bar(&mut board, &mut bar, turn_black, sel) {
 							run_turn(&mut roll, &mut double_count, &mut turn_black, f_sel);
 						}
 					}
-				} else if bar[if turn_black { 1 } else { 0 }].pieces == 0 &&  can_move(&roll, double_count, (sel-cur_sel).abs()) {
+				} else if bar[if turn_black { 1 } else { 0 }].pieces == 0 &&  can_move(&roll, (sel-cur_sel).abs()) {
 					if move_piece(&mut board, &mut bar, turn_black, cur_sel, sel) {
 							run_turn(&mut roll, &mut double_count, &mut turn_black, (sel-cur_sel).abs());
 					}
@@ -324,9 +347,10 @@ fn main() {
 		}
 		if d.is_mouse_button_pressed(MouseButton::MOUSE_RIGHT_BUTTON) {
 			let sel = handle_click(d.get_mouse_position(), turn_black);
+			let current_turn_black = turn_black;
 			handle_right_click(&mut board, &mut roll, &mut double_count, &mut turn_black, &bar, sel);
-			if check_win(&board, turn_black) {
-				println!("{} wins!", if turn_black { "Black" } else { "White" });
+			if check_win(&board, current_turn_black) {
+				println!("{} wins!", if current_turn_black { "Black" } else { "White" });
 				break;
 			}
 		}
@@ -339,7 +363,7 @@ fn main() {
 		d.draw_text("Home", 12, 240, 20, Color::BLACK);
 		let turn_col = if turn_black { Color::BLACK } else { Color::WHITE };
 		if roll[0] == roll[1] {
-			d.draw_text(format!("Roll {} x {}",roll[0],double_count).as_str(), 400, 240, 20, turn_col);
+			d.draw_text(format!("Roll {} ({})",roll[0],double_count).as_str(), 400, 240, 20, turn_col);
 		} else {
 			let r1 = if roll[0] > 0 { roll[0] } else { 0 };
 			let r2 = if roll[1] > 0 { roll[1] } else { 0 };
